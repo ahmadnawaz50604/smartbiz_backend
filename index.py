@@ -87,7 +87,7 @@ D = {
     ("Open orders (Sent)", "SELECT count(*) FROM purchase_orders WHERE supplier_id=%(sid)s AND status='Sent'"),
     ("Order value (all)", "SELECT round(coalesce(sum(i.quantity*i.unit_cost),0),2) FROM purchase_orders o JOIN purchase_order_items i USING(purchase_order_id) WHERE o.supplier_id=%(sid)s")],
     chart=None, tables=[("Purchase orders for me", PO("o.supplier_id=%(sid)s AND o.status<>'Draft'"), []),
-    ("My products & stock", f"SELECT product_id,product_name,stock_quantity,reorder_level,status FROM {V} v JOIN products USING(product_id) WHERE supplier_id=%(sid)s ORDER BY stock_quantity-reorder_level", [])]),
+        ("My products & stock", "SELECT p.product_id,p.product_name,i.stock_quantity,i.reorder_level,p.status FROM products p JOIN inventory i USING(product_id) WHERE p.supplier_id=%(sid)s ORDER BY i.stock_quantity-i.reorder_level", [])]),
 }
 STAFF = ("admin", "inventory_manager", "warehouse_manager", "sales_manager", "purchase_manager", "sales_staff")
 
