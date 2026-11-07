@@ -1,0 +1,8 @@
+[project]
+name = "smartbiz-backend"
+version = "1.0.0"
+requires-python = ">=3.9"
+dependencies = ["flask>=3.0", "psycopg[binary]>=3.1", "werkzeug>=3.0"]
+
+[tool.vercel]
+entrypoint = "index:app"
