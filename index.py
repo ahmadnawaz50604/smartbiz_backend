@@ -87,10 +87,18 @@ D = {
     ("Open orders (Sent)", "SELECT count(*) FROM purchase_orders WHERE supplier_id=%(sid)s AND status='Sent'"),
     ("Order value (all)", "SELECT round(coalesce(sum(i.quantity*i.unit_cost),0),2) FROM purchase_orders o JOIN purchase_order_items i USING(purchase_order_id) WHERE o.supplier_id=%(sid)s")],
     chart=None, tables=[("Purchase orders for me", PO("o.supplier_id=%(sid)s AND o.status<>'Draft'"), []),
-        ("My products & stock", "SELECT p.product_id,p.product_name,i.stock_quantity,i.reorder_level,p.status FROM products p JOIN inventory i USING(product_id) WHERE p.supplier_id=%(sid)s ORDER BY i.stock_quantity-i.reorder_level", [])]),
+    ("My products & stock", "SELECT p.product_id,p.product_name,i.stock_quantity,i.reorder_level,p.status FROM products p JOIN inventory i USING(product_id) WHERE p.supplier_id=%(sid)s ORDER BY i.stock_quantity-i.reorder_level", [])]),
 }
 STAFF = ("admin", "inventory_manager", "warehouse_manager", "sales_manager", "purchase_manager", "sales_staff")
 
+
+def demo_mode(): return os.environ.get("DEMO_MODE", "").strip().lower()    # "" (off) | "on" | "readonly"
+def nav_for(role, demo):
+    roles = list(D) if demo else (list(STAFF) if role == "admin" else [role])
+    return [dict(role=r, title=D[r]["title"], group="internal" if r in STAFF else "portal") for r in roles]
+def issue(u, demo=False):
+    tok = ser.dumps(dict(uid=u["user_id"], role=u["role"], name=u["full_name"], cid=u["customer_id"], sid=u["supplier_id"], demo=demo))
+    return jsonify(ok=True, token=tok, role=u["role"], name=u["full_name"], demo=demo)
 
 from werkzeug.exceptions import HTTPException
 @app.errorhandler(HTTPException)
@@ -109,9 +117,7 @@ def login():
     r = q("SELECT * FROM users WHERE username=%s", (f.get("username", ""),))
     if not r or not check_password_hash(r[0]["password_hash"], f.get("password", "")):
         return jsonify(ok=False, message="Invalid username or password"), 401
-    u = r[0]
-    tok = ser.dumps(dict(uid=u["user_id"], role=u["role"], name=u["full_name"], cid=u["customer_id"], sid=u["supplier_id"]))
-    return jsonify(ok=True, token=tok, role=u["role"], name=u["full_name"])
+    return issue(r[0])
 
 @app.post("/api/logout")
 def logout(): return jsonify(ok=True)   # client discards its token
@@ -119,7 +125,21 @@ def logout(): return jsonify(ok=True)   # client discards its token
 @app.get("/api/me")
 def me():
     if "role" not in session: abort(401, "Please sign in")
-    return jsonify(role=session["role"], name=session["name"])
+    return jsonify(role=session["role"], name=session["name"], demo=bool(session.get("demo")))
+
+@app.get("/api/demo/roles")
+def demo_roles():
+    on = demo_mode() in ("on", "readonly")
+    return jsonify(enabled=on, readonly=demo_mode() == "readonly", roles=nav_for(None, True) if on else [])
+
+@app.post("/api/demo/login")
+def demo_login():      # passwordless demo sessions; only when DEMO_MODE is on/readonly
+    if demo_mode() not in ("on", "readonly"): abort(403, "Demo mode is off")
+    role = (request.get_json(silent=True) or {}).get("role")
+    if role not in D: abort(404)
+    r = q("SELECT * FROM users WHERE role=%s ORDER BY user_id LIMIT 1", (role,))
+    if not r: abort(404, "No user exists for this role")
+    return issue(r[0], demo=True)
 
 @app.get("/api/dashboard/<role>")
 def dash(role):
@@ -134,7 +154,7 @@ def dash(role):
         tables.append(dict(title=t, columns=list(rows[0].keys()) if rows else [], rows=[list(r.values()) for r in rows],
                            actions=[dict(url="/api" + u, label=l) for u, l in a]))
     return jsonify(role=role, title=d["title"], name=session["name"],
-        nav=[dict(role=r, title=x["title"]) for r, x in D.items() if r in STAFF] if mine == "admin" else [],
+        nav=nav_for(mine, bool(session.get("demo"))), demo=bool(session.get("demo")), readonly=bool(session.get("demo")) and demo_mode() == "readonly",
         kpis=[dict(label=l, value=list(q(s, p)[0].values())[0]) for l, s in d["kpis"]],
         chart=dict(title=d["chart"][0], rows=q(d["chart"][1], p)) if d["chart"] else None, tables=tables,
         search=role in ("sales_staff", "customer"), can_order=role in ("sales_staff", "customer", "sales_manager"),
@@ -145,6 +165,7 @@ def guard(*roles):
         def w(*a, **k):
             if "role" not in session: abort(401, "Please sign in")
             if session["role"] not in roles: abort(403, "Not allowed for your role")
+            if session.get("demo") and demo_mode() == "readonly": abort(403, "Demo is read-only: actions are disabled")
             try: return jsonify(ok=True, message=f(*a, **k))
             except (ValueError, KeyError, TypeError) as e: return jsonify(ok=False, message=f"Not done: {e}"), 400
         w.__name__ = f.__name__; return w
@@ -209,3 +230,17 @@ def po_act(act):
     return f"Purchase order #{oid} {need[1].lower()}."
 
 if __name__ == "__main__": app.run(debug=True)
+    
+
+     
+
+
+
+
+
+
+    
+       
+         
+   
+    
